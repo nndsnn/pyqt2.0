@@ -405,6 +405,8 @@ class SimpleTaskManager(QMainWindow):
             self.filter_tasks()
 
     def filter_tasks(self):
+        self.tasks = self.db.get_all_tasks()
+
         while self.tasks_layout.count():
             child = self.tasks_layout.takeAt(0)
             if child.widget():
@@ -450,6 +452,20 @@ class SimpleTaskManager(QMainWindow):
         active = total - completed
         stats_text = f"Всего: {total} | Актив: {active} | Выпол: {completed}"
         self.stats_label.setText(stats_text)
+
+    def closeEvent(self, event):
+
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение закрытия",
+            "Вы точно хотите закрыть приложение?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            event.accept()
+        else:
+            event.ignore()
 
 
 def main():
