@@ -1,6 +1,5 @@
 import sys
-import json
-import os
+import sqlite3
 from datetime import datetime, date
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -10,9 +9,87 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QDate
 
 
-class TaskDialog(QDialog):
-    """Диалог добавления задачи"""
+class Database:
+    def __init__(self, db_file='task_todo.db'):
+        self.db_file = db_file
+        self.init_db()
 
+    def init_db(self):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tasks (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                title        TEXT    NOT NULL,
+                description  TEXT,
+                deadline     TEXT    NOT NULL,
+                created_date TEXT    NOT NULL,
+                is_completed BOOLEAN NOT NULL
+            )
+        ''')
+        conn.commit()
+        conn.close()
+
+    def get_all_tasks(self):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tasks')
+        tasks = []
+        for row in cursor.fetchall():
+            tasks.append({
+                'id': row[0],
+                'title': row[1],
+                'description': row[2],
+                'deadline': row[3],
+                'created_date': row[4],
+                'is_completed': bool(row[5])
+            })
+        conn.close()
+        return tasks
+
+    def add_task(self, task_data):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO tasks (title, description, deadline, created_date, is_completed)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            task_data['title'],
+            task_data['description'],
+            task_data['deadline'],
+            task_data['created_date'],
+            task_data['is_completed']
+        ))
+        conn.commit()
+        conn.close()
+
+    def update_task(self, task_data):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE tasks
+            SET title=?, description=?, deadline=?, created_date=?, is_completed=?
+            WHERE id=?
+        ''', (
+            task_data['title'],
+            task_data['description'],
+            task_data['deadline'],
+            task_data['created_date'],
+            task_data['is_completed'],
+            task_data['id']
+        ))
+        conn.commit()
+        conn.close()
+
+    def delete_task(self, task_id):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM tasks WHERE id=?', (task_id,))
+        conn.commit()
+        conn.close()
+
+
+class TaskDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Новая задача")
@@ -23,20 +100,17 @@ class TaskDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
 
-        # Название
         layout.addWidget(QLabel("Название:"))
         self.title_input = QLineEdit()
         self.title_input.setPlaceholderText("Введите название задачи...")
         layout.addWidget(self.title_input)
 
-        # Описание
         layout.addWidget(QLabel("Описание:"))
         self.desc_input = QTextEdit()
         self.desc_input.setMaximumHeight(60)
         self.desc_input.setPlaceholderText("Необязательное описание...")
         layout.addWidget(self.desc_input)
 
-        # Дедлайн
         deadline_layout = QHBoxLayout()
         deadline_layout.addWidget(QLabel("Дедлайн:"))
         self.deadline_date = QDateEdit()
@@ -45,7 +119,6 @@ class TaskDialog(QDialog):
         deadline_layout.addStretch()
         layout.addLayout(deadline_layout)
 
-        # Кнопки
         button_layout = QHBoxLayout()
         self.cancel_btn = QPushButton("Отмена")
         self.save_btn = QPushButton("Сохранить")
@@ -53,7 +126,6 @@ class TaskDialog(QDialog):
         button_layout.addWidget(self.save_btn)
         layout.addLayout(button_layout)
 
-        # Подключения
         self.cancel_btn.clicked.connect(self.reject)
         self.save_btn.clicked.connect(self.save_task)
 
@@ -68,11 +140,10 @@ class TaskDialog(QDialog):
             self.deadline_date.date().year(),
             self.deadline_date.date().month(),
             self.deadline_date.date().day(),
-            23, 59  # Конец дня
+            23, 59
         )
 
         return {
-            'id': datetime.now().timestamp(),
             'title': self.title_input.text().strip(),
             'description': self.desc_input.toPlainText().strip(),
             'deadline': deadline.isoformat(),
@@ -82,12 +153,11 @@ class TaskDialog(QDialog):
 
 
 class TaskCard(QFrame):
-    """Карточка задачи"""
-
-    def __init__(self, task_data, update_callback):
+    def __init__(self, task_data, update_callback, db):
         super().__init__()
         self.task_data = task_data
         self.update_callback = update_callback
+        self.db = db
         self.setup_ui()
 
     def setup_ui(self):
@@ -95,7 +165,6 @@ class TaskCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
 
-        # Верхняя строка
         top_layout = QHBoxLayout()
         self.checkbox = QCheckBox()
         self.checkbox.setChecked(self.task_data['is_completed'])
@@ -109,17 +178,14 @@ class TaskCard(QFrame):
         top_layout.addStretch()
         layout.addLayout(top_layout)
 
-        # Описание
         if self.task_data['description']:
             desc_label = QLabel(self.task_data['description'])
             desc_label.setStyleSheet("color: #666; font-size: 12px;")
             desc_label.setWordWrap(True)
             layout.addWidget(desc_label)
 
-        # Нижняя строка
         bottom_layout = QHBoxLayout()
 
-        # Дедлайн
         deadline = datetime.fromisoformat(self.task_data['deadline'])
         days_left = (deadline.date() - date.today()).days
 
@@ -142,7 +208,6 @@ class TaskCard(QFrame):
 
         bottom_layout.addStretch()
 
-        # Кнопка удаления
         delete_btn = QPushButton("×")
         delete_btn.setFixedSize(30, 30)
         delete_btn.setStyleSheet("""
@@ -166,6 +231,7 @@ class TaskCard(QFrame):
 
     def toggle_complete(self):
         self.task_data['is_completed'] = self.checkbox.isChecked()
+        self.db.update_task(self.task_data)
         self.update_style()
         self.update_callback()
 
@@ -176,7 +242,8 @@ class TaskCard(QFrame):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.Yes:
-            self.update_callback(delete_id=self.task_data['id'])
+            self.db.delete_task(self.task_data['id'])
+            self.update_callback()
 
     def update_style(self):
         if self.task_data['is_completed']:
@@ -213,8 +280,8 @@ class TaskCard(QFrame):
 class SimpleTaskManager(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.db = Database('task_todo.db')  # Подключение к вашей БД
         self.tasks = []
-        self.data_file = 'tasks.json'
         self.load_tasks()
         self.setup_ui()
 
@@ -228,7 +295,6 @@ class SimpleTaskManager(QMainWindow):
         layout.setSpacing(15)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        # Заголовок
         title_label = QLabel("Задачи")
         title_label.setStyleSheet("""
             font-size: 24px;
@@ -238,7 +304,6 @@ class SimpleTaskManager(QMainWindow):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
-        # Панель управления
         control_layout = QHBoxLayout()
 
         self.search_input = QLineEdit()
@@ -257,7 +322,6 @@ class SimpleTaskManager(QMainWindow):
         control_layout.addWidget(self.add_btn)
         layout.addLayout(control_layout)
 
-        # Область задач
         self.scroll_area = QScrollArea()
         self.scroll_widget = QWidget()
         self.tasks_layout = QVBoxLayout(self.scroll_widget)
@@ -266,7 +330,6 @@ class SimpleTaskManager(QMainWindow):
         self.scroll_area.setWidgetResizable(True)
         layout.addWidget(self.scroll_area)
 
-        # Статистика
         self.stats_label = QLabel()
         self.stats_label.setStyleSheet("""
             color: #7f8c8d;
@@ -331,35 +394,17 @@ class SimpleTaskManager(QMainWindow):
         """)
 
     def load_tasks(self):
-        """Загрузка задач из файла"""
-        if os.path.exists(self.data_file):
-            try:
-                with open(self.data_file, 'r', encoding='utf-8') as f:
-                    self.tasks = json.load(f)
-            except Exception as e:
-                print(f"Ошибка загрузки задач: {e}")
-                self.tasks = []
-
-    def save_tasks(self):
-        """Сохранение задач в файл"""
-        try:
-            with open(self.data_file, 'w', encoding='utf-8') as f:
-                json.dump(self.tasks, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Ошибка сохранения: {e}")
+        self.tasks = self.db.get_all_tasks()
 
     def add_task(self):
-        """Добавление новой задачи"""
         dialog = TaskDialog(self)
         if dialog.exec():
             task_data = dialog.get_task_data()
-            self.tasks.append(task_data)
-            self.save_tasks()
+            self.db.add_task(task_data)
+            self.load_tasks()
             self.filter_tasks()
 
     def filter_tasks(self):
-        """Фильтрация и отображение задач"""
-        # Очистка
         while self.tasks_layout.count():
             child = self.tasks_layout.takeAt(0)
             if child.widget():
@@ -370,11 +415,9 @@ class SimpleTaskManager(QMainWindow):
 
         filtered_tasks = []
         for task in self.tasks:
-            # Поиск
             if search_text and search_text not in task['title'].lower():
                 continue
 
-            # Фильтрация по статусу
             if filter_type == "Активные" and task['is_completed']:
                 continue
             elif filter_type == "Выполненные" and not task['is_completed']:
@@ -382,10 +425,8 @@ class SimpleTaskManager(QMainWindow):
 
             filtered_tasks.append(task)
 
-        # Сортировка по дате создания (новые сверху)
         filtered_tasks.sort(key=lambda x: x['created_date'], reverse=True)
 
-        # Отображение
         if not filtered_tasks:
             label = QLabel("Задачи не найдены")
             label.setStyleSheet("""
@@ -398,30 +439,17 @@ class SimpleTaskManager(QMainWindow):
             self.tasks_layout.addWidget(label)
         else:
             for task in filtered_tasks:
-                task_card = TaskCard(task, self.update_tasks)
+                task_card = TaskCard(task, self.filter_tasks, self.db)
                 self.tasks_layout.addWidget(task_card)
 
         self.update_stats()
 
-    def update_tasks(self, delete_id=None):
-        """Обновление списка задач"""
-        if delete_id is not None:
-            self.tasks = [t for t in self.tasks if t['id'] != delete_id]
-            self.save_tasks()
-        self.filter_tasks()
-
     def update_stats(self):
-        """Обновление статистики"""
         total = len(self.tasks)
         completed = len([t for t in self.tasks if t['is_completed']])
         active = total - completed
-        stats_text = f"Всего: {total} | Актив.: {active} | Выпол.: {completed}"
+        stats_text = f"Всего: {total} | Актив: {active} | Выпол: {completed}"
         self.stats_label.setText(stats_text)
-
-    def closeEvent(self, event):
-        """Сохранение при закрытии"""
-        self.save_tasks()
-        event.accept()
 
 
 def main():
