@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QDateEdit, QScrollArea, QDialog, QComboBox
 )
 from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtGui import QIcon
 
 
 class Database:
@@ -280,6 +281,7 @@ class TaskCard(QFrame):
 class SimpleTaskManager(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setWindowIcon(QIcon("icons8.png"))
         self.db = Database('task_todo.db')  # Подключение к вашей БД
         self.tasks = []
         self.load_tasks()
@@ -354,10 +356,10 @@ class SimpleTaskManager(QMainWindow):
                 background-color: white;
             }
             QLineEdit:focus {
-                border-color: #3498db;
+                border-color: #9370DB;
             }
             QPushButton {
-                background-color: #3498db;
+                background-color: #9370DB;
                 color: white;
                 border: none;
                 padding: 8px 16px;
@@ -365,7 +367,7 @@ class SimpleTaskManager(QMainWindow):
                 font-size: 14px;
             }
             QPushButton:hover {
-                background-color: #2980b9;
+                background-color: #9370DB;
             }
             QComboBox {
                 padding: 8px;
@@ -466,6 +468,12 @@ class SimpleTaskManager(QMainWindow):
             event.accept()
         else:
             event.ignore()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
 
 
 def main():
